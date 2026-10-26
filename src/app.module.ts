@@ -2,7 +2,9 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { createObserveModule } from '@nestjs/observe';
-
+import { AuthModule } from './modules/auth/auth.module.js';
+import { UsersModule } from './modules/users/user.module.js';
+import { SkillsModule } from './modules/skills/skill.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -30,7 +32,9 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     }),
 
     // 4. Módulos de funcionalidade
-    
+    UsersModule, // rotas /users
+    AuthModule, // rota /auth/login e registro global do JwtService
+    SkillsModule, // rotas /skills (e registra a entity Skill)
   ],
   controllers: [],
   providers: [],

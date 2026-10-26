@@ -171,6 +171,21 @@ describe('Skills (e2e)', () => {
         .expect(404);
     });
 
+    it('403 - só o dono da habilidade pode deletar', async () => {
+      const { token: donoToken } = await registerAndLogin(app, {
+        email: 'a@email.com',
+      });
+      const { token: outroToken } = await registerAndLogin(app, {
+        email: 'b@email.com',
+      });
+      const skill = await createSkill(donoToken, 'NestJS');
+
+      await http().delete(`/skills/${skill.id}`).set(auth(outroToken)).expect(403);
+
+      // a habilidade continua existindo
+      await http().get(`/skills/${skill.id}`).expect(200);
+    });
+
     it('204 - deleta a habilidade', async () => {
       const { token } = await registerAndLogin(app);
       const skill = await createSkill(token, 'NestJS');
@@ -180,8 +195,15 @@ describe('Skills (e2e)', () => {
       await http().get(`/skills/${skill.id}`).expect(404);
     });
 
-    // Habilita quando a skill tiver um dono (coluna created_by) ou quando
-    // a exclusão for restrita a admin.
-    it.todo('403 - só o dono da habilidade pode deletar');
+    it('204 - remove também o vínculo com os usuários', async () => {
+      const { user, token } = await registerAndLogin(app);
+      const skill = await createSkill(token, 'NestJS');
+      await giveSkillToUser(user.id, skill.id);
+
+      await http().delete(`/skills/${skill.id}`).set(auth(token)).expect(204);
+
+      const res = await http().get(`/skills/user/${user.id}`).expect(200);
+      expect(res.body).toEqual([]);
+    });
   });
 });
