@@ -15,6 +15,7 @@ API backend do projeto Anthem, desenvolvida com [NestJS](https://nestjs.com/), T
 - [Testes](#testes)
 - [Comandos úteis](#comandos-úteis)
 - [Estrutura do projeto](#estrutura-do-projeto)
+- [Modelo de dados](#modelo-de-dados)
 - [Roadmap](#roadmap)
 
 ## Tecnologias
@@ -103,6 +104,37 @@ A API usa **JWT**. O fluxo é:
    Authorization: Bearer <accessToken>
    ```
 
+Como funciona por dentro:
+
+- No login, a API compara a senha enviada com o **hash** salvo no banco (`bcrypt`) e, se bater, gera um token assinado com o `JWT_SECRET`. O token guarda o `id` do usuário (campo `sub`) e **expira em 1 hora**.
+- Nas rotas protegidas, o `JwtAuthGuard` valida a assinatura e a validade do token e guarda o `id` em `request.user`. O decorator `@CurrentUser()` entrega esse `id` ao controller.
+- A identidade vem **sempre do token**, nunca do corpo ou da URL. É assim que a API garante que só o dono da conta consegue alterá-la (`403` caso contrário).
+
+Limitações conhecidas:
+
+- O token não pode ser cancelado antes de expirar.
+- Trocar a senha não invalida os tokens já emitidos.
+- Não há limite de tentativas de login.
+
+## Rotas
+
+Rotas marcadas com 🔒 exigem o cabeçalho `Authorization`. Sem token, com token malformado, assinado com outra chave ou expirado, a resposta é `401`.
+
+### Autenticação
+
+| Método | Rota | Descrição | Acesso |
+|---|---|---|---|
+| `POST` | `/auth/login` | Autentica o usuário e devolve o token de acesso | Pública |
+
+#### `POST /auth/login`
+
+- Corpo: `email` e `password`
+- `200`: retorna `{ "accessToken": "..." }` (token válido por 1 hora)
+- `400`: corpo inválido (e-mail mal formatado ou senha vazia)
+- `401`: credenciais inválidas (e-mail inexistente, senha errada ou conta deletada; a resposta é a mesma nos três casos, para não revelar quais e-mails têm conta)
+
+Exemplo:
+
 ```http
 POST /auth/login
 Content-Type: application/json
@@ -110,15 +142,16 @@ Content-Type: application/json
 { "email": "matheus@email.com", "password": "Senha12345" }
 ```
 
-| Resposta | Significado |
-|---|---|
-| `200` | Retorna `{ "accessToken": "..." }` |
-| `400` | Corpo inválido |
-| `401` | Credenciais inválidas (e-mail inexistente e senha errada têm a mesma resposta) |
+```json
+{ "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." }
+```
 
-## Rotas
+Uso do token em uma rota protegida:
 
-Rotas marcadas com 🔒 exigem o cabeçalho `Authorization`. Sem token (ou com token inválido), a resposta é `401`.
+```http
+GET /users/3f1c0000-0000-4000-8000-000000000000
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
 
 ### Usuários
 
@@ -266,11 +299,13 @@ npm run test:e2e -- -t "409"      # só os testes com "409" no nome
 
 Os arquivos de teste rodam em sequência (`--runInBand`), porque compartilham o mesmo banco. Os testes não usam a porta 3000, então podem rodar com a API ligada.
 
+No total são **54 testes** e 1 pendente (`todo`).
+
 ### O que é testado
 
 | Arquivo | Cobertura |
 |---|---|
-| `test/auth.e2e-spec.ts` | Login com credenciais corretas, senha incorreta, e-mail inexistente e corpo inválido |
+| `test/auth.e2e-spec.ts` | Login (credenciais corretas, senha incorreta, e-mail inexistente e corpo inválido) e proteção das rotas pelo `JwtAuthGuard` (cabeçalho sem `Bearer`, esquema diferente, token assinado com outra chave e token expirado) |
 | `test/users.e2e-spec.ts` | Cadastro, listagem paginada, busca por id, atualização (perfil e troca de senha), exclusão e regras de dono (`401`, `403`, `404`) |
 | `test/skills.e2e-spec.ts` | Listagem paginada, busca por id, habilidades de um usuário, criação (inclui duplicatas) e exclusão |
 
@@ -278,6 +313,8 @@ Resumo dos cenários principais:
 
 | Rota | Cenários verificados |
 |---|---|
+| `POST /auth/login` | `200` com `accessToken`, `401` senha incorreta, `401` e-mail inexistente, `400` corpo inválido |
+| Rotas protegidas (`JwtAuthGuard`) | `401` para cabeçalho sem `Bearer`, esquema `Basic`, token assinado com outra chave e token expirado |
 | `POST /users` | `201` sem senha na resposta, `409` e-mail duplicado, `400` para e-mail inválido, senha curta, username ausente e campo extra |
 | `GET /users` | `401` sem token e com token inválido, `200` paginado sem senha |
 | `GET /users/:id` | `401`, `200`, `404`, `400` para id que não é UUID |
@@ -322,11 +359,14 @@ src/
 ├── main.ts                # Ponto de entrada
 ├── app.module.ts          # Módulo raiz (config, banco e módulos)
 ├── app.setup.ts           # Configuração compartilhada com os testes (ValidationPipe)
-├── common/                # Guards, decorators, middlewares e DTOs compartilhados
+├── common/
+│   ├── decorators/        # @CurrentUser()
+│   ├── dto/               # DTOs compartilhados (paginação)
+│   └── guards/            # JwtAuthGuard
 └── modules/
-    ├── auth/              # Login e geração do token
-    ├── users/             # Usuários (controller, service, entity, dto, errors)
-    └── skills/            # Habilidades (controller, service, entity, dto, errors)
+    ├── auth/              # Login e geração do token (controller, service, dto, erros)
+    ├── users/             # Usuários (controller, service, entity, dto, erros)
+    └── skills/            # Habilidades (controller, service, entity, dto, erros)
 test/                      # Testes e2e
 ```
 
@@ -346,5 +386,6 @@ test/                      # Testes e2e
 - [ ] Endpoints de habilidades
 - [ ] Testes e2e passando
 - [ ] Vínculo de habilidades a usuários
+- [ ] Refresh token e limite de tentativas de login
 - [ ] Migrations no lugar do `synchronize`
 - [ ] Documentação com Swagger
