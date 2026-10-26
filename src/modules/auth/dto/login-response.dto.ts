@@ -1,0 +1,10 @@
+// src/modules/auth/dto/login-response.dto.ts
+import { ApiProperty } from '@nestjs/swagger';
+
+export class LoginResponseDto {
+  @ApiProperty({
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+    description: 'Token JWT, válido por 1 hora',
+  })
+  accessToken: string;
+}
