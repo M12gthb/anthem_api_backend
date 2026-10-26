@@ -1,4 +1,3 @@
-// src/modules/skills/entities/skill.entity.ts
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('skill')

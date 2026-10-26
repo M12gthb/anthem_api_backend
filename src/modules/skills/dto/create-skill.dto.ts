@@ -1,4 +1,3 @@
-// src/modules/skills/dto/create-skill.dto.ts
 import { Transform } from 'class-transformer';
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
