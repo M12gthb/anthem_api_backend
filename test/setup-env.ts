@@ -1,8 +1,6 @@
-// test/setup-env.ts
-import { config } from 'dotenv';
-import { resolve } from 'path';
+import dotenv from 'dotenv';
 
-config({ path: resolve(__dirname, '../.env.test') });
+dotenv.config({ path: '.env.test' });
 
 // trava de segurança: os testes apagam dados, então só rodam em banco "_test"
 if (!process.env.DATABASE_URL?.endsWith('_test')) {
