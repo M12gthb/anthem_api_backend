@@ -12,6 +12,7 @@ API backend do projeto Anthem, desenvolvida com [NestJS](https://nestjs.com/), T
 - [Como rodar](#como-rodar)
 - [Documentação da API (Swagger)](#documentação-da-api-swagger)
 - [Autenticação](#autenticação)
+- [Regras de negócio](#regras-de-negócio)
 - [Rotas](#rotas)
 - [Testes](#testes)
 - [Comandos úteis](#comandos-úteis)
@@ -154,6 +155,7 @@ Como funciona por dentro:
 - No login, a API compara a senha enviada com o **hash** salvo no banco (`bcrypt`) e, se bater, gera um token assinado com o `JWT_SECRET`. O token guarda o `id` do usuário (campo `sub`) e **expira em 1 hora**.
 - Nas rotas protegidas, o `JwtAuthGuard` valida a assinatura e a validade do token e guarda o `id` em `request.user`. O decorator `@CurrentUser()` entrega esse `id` ao controller.
 - A identidade vem **sempre do token**, nunca do corpo ou da URL. É assim que a API garante que só o dono da conta consegue alterá-la (`403` caso contrário).
+- Como o token guarda o `id`, e não o e-mail, ele continua válido depois de uma troca de e-mail.
 - Contas removidas (soft delete) não conseguem fazer login.
 
 Limitações conhecidas:
@@ -161,6 +163,37 @@ Limitações conhecidas:
 - O token não pode ser cancelado antes de expirar.
 - Trocar a senha não invalida os tokens já emitidos.
 - Não há limite de tentativas de login.
+
+## Regras de negócio
+
+### Usuários
+
+| Regra | Onde vale | Resposta quando violada |
+|---|---|---|
+| O e-mail é único entre **todas** as contas, inclusive as removidas (soft delete) | Cadastro e atualização | `409` |
+| O e-mail **pode ser alterado** pelo `PATCH /users/:id` | Atualização | `409` se já pertencer a outra conta |
+| Enviar o próprio e-mail atual não conta como alteração (não gera conflito) | Atualização | Não se aplica |
+| Depois da troca, o login passa a usar o e-mail novo; o antigo deixa de funcionar | Login | `401` com o e-mail antigo |
+| A data de nascimento (`birthDate`) é definida **só no cadastro** e não pode ser alterada | Atualização | `400` |
+| A data de nascimento não pode estar no futuro | Cadastro | `400` |
+| Trocar a senha exige informar a senha atual (`currentPassword`) | Atualização | `400` |
+| Só o dono da conta pode alterá-la ou removê-la | Atualização e remoção | `403` |
+| Uma atualização sem nenhum campo válido é recusada | Atualização | `400` |
+
+Como a unicidade do e-mail é garantida:
+
+1. Antes de salvar, o service verifica se o e-mail já existe (com `withDeleted: true`, para incluir contas removidas) e lança `EmailAlreadyInUseError` (`409`).
+2. Se duas requisições com o mesmo e-mail chegarem ao mesmo tempo e ambas passarem pela verificação, a constraint `UNIQUE` do banco barra a segunda. O service captura esse erro (código `23505` do PostgreSQL) e o converte no mesmo `409`, então a API nunca responde `500` por e-mail duplicado.
+
+O `PATCH` só repassa ao banco os campos de uma lista explícita (`username`, `email`, `seniority`, `currentPosition` e, quando há troca, `password`). Um campo novo no DTO só chega ao banco se for incluído nessa lista.
+
+### Habilidades
+
+| Regra | Resposta quando violada |
+|---|---|
+| O nome é único, sem diferenciar maiúsculas de minúsculas | `409` |
+| Quem cria a habilidade é o dono, e só o dono pode removê-la | `403` |
+| Remover uma habilidade remove também os vínculos dela com os usuários | Não se aplica |
 
 ## Rotas
 
@@ -216,7 +249,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 - Corpo: `username`, `email` e `password` (obrigatórios); `seniority`, `currentPosition` e `birthDate` (opcionais)
 - `201`: criado com sucesso, retorna o usuário sem o campo senha
 - `409`: e-mail já existe (inclui e-mails de contas removidas)
-- `400`: corpo inválido (e-mail mal formatado, senha fora de 8 a 72 caracteres, campo ausente ou que não existe no DTO)
+- `400`: corpo inválido (e-mail mal formatado, senha fora de 8 a 72 caracteres, data de nascimento no futuro, campo ausente ou que não existe no DTO)
 
 #### `GET /users`
 
@@ -233,11 +266,29 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 #### `PATCH /users/:id`
 
+- Corpo (todos opcionais): `username`, `email`, `seniority`, `currentPosition`, `password` e `currentPassword`
 - `200`: retorna o usuário atualizado sem a senha
-- `400`: campo inválido (inclui `email`, que não pode ser alterado por esta rota, senha nova sem `currentPassword`, `currentPassword` incorreta, data de nascimento no futuro e corpo vazio)
+- `400`: campo inválido (e-mail mal formatado, `birthDate`, que não pode ser alterada, senha nova sem `currentPassword`, `currentPassword` incorreta, enum inválido, campo que não existe no DTO e corpo vazio)
 - `401`: não autorizado
 - `403`: o token é de outro usuário
 - `404`: usuário não encontrado (por exemplo, a conta foi removida e o token ainda é válido)
+- `409`: o e-mail novo já pertence a outra conta (inclui contas removidas)
+
+Para trocar o e-mail:
+
+```json
+{ "email": "novo@email.com" }
+```
+
+Se o e-mail já estiver em uso, a resposta é:
+
+```json
+{
+  "message": "This email address is already in use",
+  "error": "Conflict",
+  "statusCode": 409
+}
+```
 
 Para trocar a senha, envie a nova senha junto com a atual:
 
@@ -326,7 +377,7 @@ Demais erros (`401`, `403`, `404`, `409`):
 
 ```json
 {
-  "message": "E-mail já cadastrado",
+  "message": "This email address is already in use",
   "error": "Conflict",
   "statusCode": 409
 }
@@ -369,18 +420,19 @@ Os testes são **e2e** (ponta a ponta): sobem a aplicação, chamam as rotas por
 npm run test:e2e                  # todos os testes
 npm run test:e2e -- users         # só o arquivo users.e2e-spec.ts
 npm run test:e2e -- -t "409"      # só os testes com "409" no nome
+npm run test:e2e -- -t "e-mail"   # só os testes de troca de e-mail
 ```
 
 O script usa `vitest run --config ./vitest.config.e2e.ts`. Os arquivos de teste rodam **em sequência** (`fileParallelism: false`), porque compartilham o mesmo banco. Os testes não usam a porta 3000, então podem rodar com a API ligada.
 
-No total são **56 testes**.
+No total são **60 testes**.
 
 ### O que é testado
 
 | Arquivo | Testes | Cobertura |
 |---|---|---|
 | `test/auth.e2e-spec.ts` | 8 | Login (credenciais corretas, senha incorreta, e-mail inexistente e corpo inválido) e proteção das rotas pelo `JwtAuthGuard` (cabeçalho sem `Bearer`, esquema diferente, token assinado com outra chave e token expirado) |
-| `test/users.e2e-spec.ts` | 28 | Cadastro, listagem paginada, busca por id, atualização (perfil e troca de senha), exclusão e regras de dono (`401`, `403`, `404`) |
+| `test/users.e2e-spec.ts` | 32 | Cadastro, listagem paginada, busca por id, atualização (perfil, troca de senha e troca de e-mail), exclusão e regras de dono (`401`, `403`, `404`) |
 | `test/skills.e2e-spec.ts` | 20 | Listagem paginada, busca por id, habilidades de um usuário, criação (inclui duplicatas), exclusão e regra do dono |
 
 Resumo dos cenários principais:
@@ -392,7 +444,7 @@ Resumo dos cenários principais:
 | `POST /users` | `201` sem senha na resposta, `409` e-mail duplicado, `400` para e-mail inválido, senha curta, username ausente e campo extra |
 | `GET /users` | `401` sem token e com token inválido, `200` paginado sem senha |
 | `GET /users/:id` | `401`, `200`, `404`, `400` para id que não é UUID |
-| `PATCH /users/:id` | `200` atualiza perfil, `200` troca de senha (login novo funciona, antigo falha), `400` para senha sem `currentPassword`, `currentPassword` errada, `email`, enum inválido, data inexistente e campo extra, `401`, `403` conta de outra pessoa, `404` conta removida |
+| `PATCH /users/:id` | `200` atualiza perfil, `200` troca de senha (login novo funciona, antigo falha), `200` troca de e-mail (login com o e-mail novo funciona, com o antigo falha), `200` enviando o próprio e-mail, `409` e-mail de outra conta (o e-mail original é mantido), `409` e-mail de conta removida, `400` para senha sem `currentPassword`, `currentPassword` errada, e-mail inválido, `birthDate`, enum inválido e campo extra, `401`, `403` conta de outra pessoa, `404` conta removida |
 | `DELETE /users/:id` | `401`, `403`, `204` (depois o usuário some das consultas e não consegue logar), `404` ao repetir |
 | `GET /skills` | `200` lista vazia e lista paginada |
 | `GET /skills/:id` | `200`, `404`, `400` |
@@ -478,7 +530,7 @@ erDiagram
   }
 ```
 
-- **users**: `password` guarda o **hash** da senha, nunca a senha. `seniority` é um enum (`junior`, `mid`, `senior`, `lead`). `deleted_at` habilita o soft delete.
+- **users**: `password` guarda o **hash** da senha, nunca a senha. `email` é único (a constraint vale também para contas removidas, porque o soft delete mantém a linha na tabela). `birth_date` é preenchida só no cadastro. `seniority` é um enum (`junior`, `mid`, `senior`, `lead`). `deleted_at` habilita o soft delete.
 - **skill**: `name` é único (sem diferenciar maiúsculas de minúsculas na API). `created_by` guarda o id do dono.
 - **user_skill**: tabela intermediária da relação muitos-para-muitos entre usuários e habilidades, com chave primária composta `(user_id, skill_id)` e `ON DELETE CASCADE` nas duas chaves estrangeiras.
 
@@ -496,6 +548,7 @@ erDiagram
 | `Nest can't resolve dependencies of the JwtAuthGuard` | O `AuthModule` não está no `AppModule` | Importe o `AuthModule` |
 | `Entity metadata for User#skills was not found` | O `SkillsModule` não está no `AppModule` | Importe o `SkillsModule` |
 | Tabelas não criadas ao rodar pelo Docker | A imagem roda com `NODE_ENV=production` (sem `synchronize`) | Use a opção 2 até existirem migrations |
+| `500` com `duplicate key value violates unique constraint` no `PATCH /users/:id` | Versão antiga do service, sem a checagem de e-mail no `update` | Atualize o `users.service.ts`: o `update` deve verificar o e-mail e converter o erro `23505` em `409` |
 
 ## Convenção de commits
 
@@ -519,7 +572,7 @@ O projeto segue o padrão [Conventional Commits](https://www.conventionalcommits
 | `chore` | Tarefas de manutenção |
 | `revert` | Reverte um commit anterior |
 
-Exemplos: `feat(auth): add login route with JWT`, `test(users): add e2e tests`, `docs: update README`.
+Exemplos: `feat(auth): add login route with JWT`, `feat(users): allow email change on PATCH`, `test(users): add e2e tests`, `docs: update README`.
 
 ## Roadmap
 
@@ -527,10 +580,12 @@ Exemplos: `feat(auth): add login route with JWT`, `test(users): add e2e tests`, 
 - [x] Docker e Docker Compose com PostgreSQL
 - [x] Modelagem dos dados (DER, entities e DTOs)
 - [x] Endpoints de usuários
+- [x] Troca de e-mail com verificação de duplicidade
 - [x] Autenticação com JWT
 - [x] Endpoints de habilidades (com regra de dono)
-- [x] Testes e2e (56 testes)
+- [x] Testes e2e (60 testes)
 - [x] Documentação com Swagger
 - [ ] Vínculo de habilidades a usuários (`/users/me/skills`)
+- [ ] Confirmação da troca de e-mail (por senha atual ou link enviado ao e-mail novo)
 - [ ] Refresh token e limite de tentativas de login
 - [ ] Migrations no lugar do `synchronize`
