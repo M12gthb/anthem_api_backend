@@ -142,7 +142,6 @@ describe('Users (e2e)', () => {
           username: 'Novo Nome',
           currentPosition: 'Dev Pleno',
           seniority: 'mid',
-          birthDate: '1998-05-23',
         })
         .expect(200);
 
@@ -150,7 +149,6 @@ describe('Users (e2e)', () => {
         username: 'Novo Nome',
         currentPosition: 'Dev Pleno',
         seniority: 'mid',
-        birthDate: '1998-05-23',
       });
       expect(res.body).not.toHaveProperty('password');
     });
@@ -194,10 +192,93 @@ describe('Users (e2e)', () => {
         .expect(400);
     });
 
+    describe('e-mail', () => {
+      it('200 - troca o e-mail e o login passa a usar o novo', async () => {
+        const { user, token, credentials } = await registerAndLogin(app, {
+          email: 'antigo@email.com',
+        });
+
+        const res = await http()
+          .patch(`/users/${user.id}`)
+          .set(auth(token))
+          .send({ email: 'novo@email.com' })
+          .expect(200);
+
+        expect(res.body.email).toBe('novo@email.com');
+
+        await http()
+          .post('/auth/login')
+          .send({ email: 'novo@email.com', password: credentials.password })
+          .expect(200);
+        await http()
+          .post('/auth/login')
+          .send({ email: 'antigo@email.com', password: credentials.password })
+          .expect(401);
+      });
+
+      it('200 - enviar o próprio e-mail junto com outro campo não dá conflito', async () => {
+        const { user, token } = await registerAndLogin(app, {
+          email: 'a@email.com',
+        });
+
+        const res = await http()
+          .patch(`/users/${user.id}`)
+          .set(auth(token))
+          .send({ email: 'a@email.com', username: 'Mesmo E-mail' })
+          .expect(200);
+
+        expect(res.body).toMatchObject({
+          email: 'a@email.com',
+          username: 'Mesmo E-mail',
+        });
+      });
+
+      it('409 - e-mail já usado por outra conta', async () => {
+        const { user, token } = await registerAndLogin(app, {
+          email: 'a@email.com',
+        });
+        await registerAndLogin(app, { email: 'b@email.com' });
+
+        const res = await http()
+          .patch(`/users/${user.id}`)
+          .set(auth(token))
+          .send({ email: 'b@email.com' })
+          .expect(409);
+        expect(res.body.message).toEqual(expect.any(String));
+
+        // o e-mail original continua o mesmo
+        const atual = await http()
+          .get(`/users/${user.id}`)
+          .set(auth(token))
+          .expect(200);
+        expect(atual.body.email).toBe('a@email.com');
+      });
+
+      it('409 - e-mail de uma conta que foi deletada', async () => {
+        const { user, token } = await registerAndLogin(app, {
+          email: 'a@email.com',
+        });
+        const { user: apagado, token: tokenApagado } = await registerAndLogin(
+          app,
+          { email: 'b@email.com' },
+        );
+        await http()
+          .delete(`/users/${apagado.id}`)
+          .set(auth(tokenApagado))
+          .expect(204);
+
+        await http()
+          .patch(`/users/${user.id}`)
+          .set(auth(token))
+          .send({ email: 'b@email.com' })
+          .expect(409);
+      });
+    });
+
     it.each([
-      ['e-mail (tem rota própria)', { email: 'novo@email.com' }],
+      ['e-mail inválido', { email: 'nao-e-email' }],
+      ['data de nascimento (não pode ser alterada)', { birthDate: '1998-05-23' }],
       ['seniority fora do enum', { seniority: 'deus' }],
-      ['data de nascimento inexistente', { birthDate: '1998-02-31' }],
       ['campo que não existe', { admin: true }],
     ])('400 - campo inválido (%s)', async (_caso, invalido) => {
       const { user, token } = await registerAndLogin(app);

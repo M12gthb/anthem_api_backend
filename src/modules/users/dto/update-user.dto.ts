@@ -3,7 +3,7 @@ import { IsNotEmpty, IsString, ValidateIf } from 'class-validator';
 import { CreateUserDto } from './create-user.dto.js';
 
 export class UpdateUserDto extends PartialType(
-  OmitType(CreateUserDto, ['email'] as const),
+  OmitType(CreateUserDto, ['birthDate'] as const),
 ) {
   @ApiPropertyOptional({
     example: 'Senha12345',
