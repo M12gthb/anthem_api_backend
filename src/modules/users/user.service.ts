@@ -17,9 +17,13 @@ import { UserNotFoundError } from './erros/user-not-found.error.js';
 
 const SALT_ROUNDS = 10;
 
+// campos que o PATCH pode alterar (birthDate é definido só no cadastro)
 type UserChanges = Partial<
-  Pick<User, 'username' | 'seniority' | 'currentPosition' | 'birthDate' | 'password'>
+  Pick<User, 'username' | 'email' | 'seniority' | 'currentPosition' | 'password'>
 >;
+
+// lista explícita: um campo novo no DTO só chega ao banco se entrar aqui
+const UPDATABLE_FIELDS = ['username', 'email', 'seniority', 'currentPosition'] as const;
 
 @Injectable()
 export class UsersService {
@@ -29,12 +33,7 @@ export class UsersService {
   ) {}
 
   async create(dto: CreateUserDto): Promise<UserResponseDto> {
-    // withDeleted: o unique do e-mail também vale para contas apagadas (soft delete)
-    const emailTaken = await this.usersRepository.exists({
-      where: { email: dto.email },
-      withDeleted: true,
-    });
-    if (emailTaken) throw new EmailAlreadyInUseError();
+    await this.assertEmailAvailable(dto.email);
 
     if (dto.birthDate) this.assertBirthDateNotInFuture(dto.birthDate);
 
@@ -83,24 +82,39 @@ export class UsersService {
     this.assertIsOwner(id, requesterId);
 
     // 2. a conta precisa existir (soft-deleted conta como inexistente)
-    if (!(await this.usersRepository.existsBy({ id }))) {
-      throw new UserNotFoundError();
+    const user = await this.usersRepository.findOne({
+      where: { id },
+      select: { id: true, email: true },
+    });
+    if (!user) throw new UserNotFoundError();
+
+    const changes: UserChanges = this.pickDefined(dto, UPDATABLE_FIELDS);
+
+    // 3. e-mail novo não pode pertencer a outra conta (inclusive apagadas)
+    if (changes.email !== undefined) {
+      if (changes.email === user.email) {
+        delete changes.email; // mesmo e-mail: não é alteração
+      } else {
+        await this.assertEmailAvailable(changes.email);
+      }
     }
 
-    const { password, currentPassword, ...profile } = dto;
-    const changes: UserChanges = this.withoutUndefined(profile);
-
-    if (changes.birthDate) this.assertBirthDateNotInFuture(changes.birthDate);
-
-    // 3. senha nova exige a senha atual
-    if (password != null) {
-      await this.assertCurrentPassword(id, currentPassword);
-      changes.password = await bcrypt.hash(password, SALT_ROUNDS);
+    // 4. senha nova exige a senha atual
+    if (dto.password != null) {
+      await this.assertCurrentPassword(id, dto.currentPassword);
+      changes.password = await bcrypt.hash(dto.password, SALT_ROUNDS);
     }
 
     if (Object.keys(changes).length === 0) throw new NoFieldsToUpdateError();
 
-    await this.usersRepository.update(id, changes);
+    try {
+      await this.usersRepository.update(id, changes);
+    } catch (error) {
+      // duas requisições ao mesmo tempo com o mesmo e-mail: o banco barra a segunda
+      if (this.isUniqueViolation(error)) throw new EmailAlreadyInUseError();
+      throw error;
+    }
+
     return this.findOne(id);
   }
 
@@ -126,6 +140,15 @@ export class UsersService {
 
   private assertIsOwner(targetId: string, requesterId: string) {
     if (targetId !== requesterId) throw new CannotModifyOtherUserError();
+  }
+
+  // withDeleted: o unique do e-mail também vale para contas apagadas (soft delete)
+  private async assertEmailAvailable(email: string) {
+    const taken = await this.usersRepository.exists({
+      where: { email },
+      withDeleted: true,
+    });
+    if (taken) throw new EmailAlreadyInUseError();
   }
 
   private assertBirthDateNotInFuture(birthDate: string) {
@@ -155,11 +178,16 @@ export class UsersService {
     );
   }
 
-  // campos não enviados ficam como undefined no DTO e não podem contar como alteração
-  private withoutUndefined<T extends object>(obj: T): Partial<T> {
-    return Object.fromEntries(
-      Object.entries(obj).filter(([, value]) => value !== undefined),
-    ) as Partial<T>;
+  // copia só os campos permitidos; os não enviados (undefined) não contam como alteração
+  private pickDefined<T extends object, K extends keyof T>(
+    obj: T,
+    keys: readonly K[],
+  ): Partial<Pick<T, K>> {
+    const result: Partial<Pick<T, K>> = {};
+    for (const key of keys) {
+      if (obj[key] !== undefined) result[key] = obj[key];
+    }
+    return result;
   }
 
   private toResponse(user: User): UserResponseDto {
