@@ -3,6 +3,6 @@ import { BadRequestException } from '@nestjs/common';
 
 export class InvalidBirthDateError extends BadRequestException {
   constructor() {
-    super('A data de nascimento não pode ser no futuro');
+    super('The birthdate cannot be in the future');
   }
 }

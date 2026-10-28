@@ -3,6 +3,6 @@ import { BadRequestException } from '@nestjs/common';
 
 export class InvalidCurrentPasswordError extends BadRequestException {
   constructor() {
-    super('Senha atual incorreta');
+    super('Incorrect current password');
   }
 }

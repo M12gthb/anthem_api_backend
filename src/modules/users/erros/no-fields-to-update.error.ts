@@ -3,6 +3,6 @@ import { BadRequestException } from '@nestjs/common';
 
 export class NoFieldsToUpdateError extends BadRequestException {
   constructor() {
-    super('Nenhum campo para atualizar');
+    super('No fields to update');
   }
 }
