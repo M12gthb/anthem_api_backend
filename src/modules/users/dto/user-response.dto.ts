@@ -9,5 +9,6 @@ export class UserResponseDto {
   @Expose() seniority: SeniorityLevel | null;
   @Expose() currentPosition: string | null;
   @Expose() birthDate: string | null;
+  @Expose() favoritePhrase: string | null;
   @Expose() createdAt: Date;
 }

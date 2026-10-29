@@ -1,10 +1,25 @@
+// src/modules/users/dto/update-user.dto.ts
 import { ApiPropertyOptional, OmitType, PartialType } from '@nestjs/swagger';
 import { IsNotEmpty, IsString, ValidateIf } from 'class-validator';
+import { Match } from '../../../common/decorators/match.decorator.js';
 import { CreateUserDto } from './create-user.dto.js';
 
 export class UpdateUserDto extends PartialType(
-  OmitType(CreateUserDto, ['birthDate'] as const),
+  OmitType(CreateUserDto, ['birthDate', 'confirmPassword'] as const),
 ) {
+  @ApiPropertyOptional({
+    example: 'Senha12345',
+    description: 'Obrigatório quando `password` é enviado; deve ser idêntico a ele',
+  })
+  // validado quando vier senha nova OU quando vier sozinho (aí falha o Match)
+  @ValidateIf(
+    (dto: UpdateUserDto) =>
+      dto.password !== undefined || dto.confirmPassword !== undefined,
+  )
+  @IsString()
+  @Match('password')
+  confirmPassword?: string;
+
   @ApiPropertyOptional({
     example: 'Senha12345',
     description: 'Obrigatória quando `password` é enviado',

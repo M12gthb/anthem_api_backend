@@ -1,4 +1,3 @@
-// src/modules/users/entities/user.entity.ts
 import * as typeorm from 'typeorm';
 
 import { Skill } from '../../skills/entities/skill.entity.js';
@@ -21,7 +20,6 @@ export class User {
   @typeorm.Column({ type: 'varchar', length: 255, unique: true })
   email: string;
 
-  // guarda o HASH da senha, nunca a senha em texto
   @typeorm.Column({ type: 'varchar', length: 255, select: false })
   password: string;
 
@@ -38,6 +36,14 @@ export class User {
 
   @typeorm.Column({ name: 'birth_date', type: 'date', nullable: true })
   birthDate: string | null;
+
+  @typeorm.Column({
+    name: 'favorite_phrase',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  favoritePhrase: string | null;
 
   @typeorm.CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

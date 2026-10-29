@@ -1,4 +1,3 @@
-// src/modules/users/users.service.ts
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import bcrypt from 'bcrypt';
@@ -18,12 +17,29 @@ import { UserNotFoundError } from './erros/user-not-found.error.js';
 const SALT_ROUNDS = 10;
 
 // campos que o PATCH pode alterar (birthDate é definido só no cadastro)
+// ALTERADO: favoritePhrase entrou na lista
 type UserChanges = Partial<
-  Pick<User, 'username' | 'email' | 'seniority' | 'currentPosition' | 'password'>
+  Pick<
+    User,
+    | 'username'
+    | 'email'
+    | 'seniority'
+    | 'currentPosition'
+    | 'favoritePhrase'
+    | 'password'
+  >
 >;
 
 // lista explícita: um campo novo no DTO só chega ao banco se entrar aqui
-const UPDATABLE_FIELDS = ['username', 'email', 'seniority', 'currentPosition'] as const;
+// (confirmPassword e currentPassword ficam de fora de propósito)
+// ALTERADO: favoritePhrase entrou na lista
+const UPDATABLE_FIELDS = [
+  'username',
+  'email',
+  'seniority',
+  'currentPosition',
+  'favoritePhrase',
+] as const;
 
 @Injectable()
 export class UsersService {
@@ -37,8 +53,16 @@ export class UsersService {
 
     if (dto.birthDate) this.assertBirthDateNotInFuture(dto.birthDate);
 
+    // NOVO: confirmPassword serve só para validar, nunca vai para o banco
+    const { confirmPassword: _confirmPassword, ...data } = dto;
+
     const password = await bcrypt.hash(dto.password, SALT_ROUNDS);
-    const user = this.usersRepository.create({ ...dto, password });
+    const user = this.usersRepository.create({
+      ...data,
+      // NOVO: sem frase, grava null (e a resposta devolve null, não omite o campo)
+      favoritePhrase: data.favoritePhrase ?? null,
+      password,
+    });
 
     try {
       const saved = await this.usersRepository.save(user);
@@ -88,6 +112,7 @@ export class UsersService {
     });
     if (!user) throw new UserNotFoundError();
 
+    // undefined = não enviado (ignora); null = enviado para limpar o campo
     const changes: UserChanges = this.pickDefined(dto, UPDATABLE_FIELDS);
 
     // 3. e-mail novo não pode pertencer a outra conta (inclusive apagadas)
@@ -100,6 +125,7 @@ export class UsersService {
     }
 
     // 4. senha nova exige a senha atual
+    //    (a igualdade password == confirmPassword já foi validada no DTO)
     if (dto.password != null) {
       await this.assertCurrentPassword(id, dto.currentPassword);
       changes.password = await bcrypt.hash(dto.password, SALT_ROUNDS);

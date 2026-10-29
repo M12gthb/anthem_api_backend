@@ -1,3 +1,4 @@
+// src/modules/users/dto/create-user.dto.ts
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
@@ -10,6 +11,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { Match } from '../../../common/decorators/match.decorator.js';
 import { SeniorityLevel } from '../entities/user.entity.js';
 
 const trim = ({ value }: { value: unknown }) =>
@@ -37,6 +39,14 @@ export class CreateUserDto {
   @MaxLength(72) // o bcrypt ignora tudo depois de 72 bytes
   password: string;
 
+  @ApiProperty({
+    example: 'Senha12345',
+    description: 'Deve ser idêntica a password',
+  })
+  @IsString()
+  @Match('password') // a comparação diferencia maiúsculas de minúsculas
+  confirmPassword: string;
+
   @ApiPropertyOptional({ enum: SeniorityLevel, example: SeniorityLevel.JUNIOR })
   @IsOptional()
   @IsEnum(SeniorityLevel)
@@ -48,6 +58,17 @@ export class CreateUserDto {
   @IsString()
   @MaxLength(255)
   currentPosition?: string;
+
+  @ApiPropertyOptional({
+    example: 'Carpe diem',
+    maxLength: 255,
+    description: 'Frase favorita do usuário',
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(255)
+  favoritePhrase?: string;
 
   @ApiPropertyOptional({ example: '1998-05-23', description: 'Formato AAAA-MM-DD' })
   @IsOptional()
