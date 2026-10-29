@@ -61,6 +61,9 @@ API backend do projeto Anthem, desenvolvida com [NestJS](https://nestjs.com/), T
    DATABASE_URL=postgresql://postgres:sua_senha_aqui@localhost:5433/anthem
    JWT_SECRET=troque_por_um_valor_longo_e_aleatorio
 
+   # Opcional: porta da API quando ela roda no Docker (padrão: 3001)
+   # API_PORT=3001
+
    # Opcional: desliga a documentação em /docs
    # SWAGGER_ENABLED=false
    ```
@@ -96,7 +99,7 @@ Ao rodar a API dentro do Docker (opção 1 abaixo), o serviço `api` do `docker-
 docker compose up --build
 ```
 
-A API ficará disponível em http://localhost:3000.
+A API ficará disponível em http://localhost:3001 (e o Swagger em http://localhost:3001/docs). A porta do computador vem da variável `API_PORT` do `.env` (padrão `3001`); dentro do container a API continua escutando na `3000`, então só o lado esquerdo do `ports` muda (`"${API_PORT:-3001}:3000"`).
 
 Para rodar em segundo plano:
 
@@ -114,7 +117,7 @@ docker compose up -d db
 npm run start:dev
 ```
 
-Neste modo, a API usa `localhost:5433` no `DATABASE_URL` e o TypeORM cria as tabelas automaticamente na primeira conexão (`synchronize`, fora de produção). Não deixe o container `api` rodando ao mesmo tempo, porque os dois disputam a porta 3000 (`docker compose stop api`).
+Neste modo, a API usa `localhost:5433` no `DATABASE_URL` e o TypeORM cria as tabelas automaticamente na primeira conexão (`synchronize`, fora de produção). A API local usa a porta 3000 (`PORT`). O container `api` usa a 3001 por padrão, então os dois podem rodar juntos; se você mudar o `API_PORT` para `3000`, vão disputar a mesma porta (`docker compose stop api`).
 
 ## Documentação da API (Swagger)
 
@@ -122,6 +125,8 @@ Com a API no ar, a documentação interativa fica em:
 
 - **http://localhost:3000/docs**: interface do Swagger
 - **http://localhost:3000/docs-json**: especificação OpenAPI em JSON
+
+Com a API rodando pelo Docker, troque `3000` por `3001` (ou pelo valor de `API_PORT`).
 
 Para testar as rotas protegidas pelo navegador:
 
@@ -177,6 +182,10 @@ Limitações conhecidas:
 | A data de nascimento (`birthDate`) é definida **só no cadastro** e não pode ser alterada | Atualização | `400` |
 | A data de nascimento não pode estar no futuro | Cadastro | `400` |
 | Trocar a senha exige informar a senha atual (`currentPassword`) | Atualização | `400` |
+| `confirmPassword` é obrigatório e deve ser **idêntico** a `password` (diferencia maiúsculas de minúsculas) | Cadastro e troca de senha | `400` |
+| Na atualização, `confirmPassword` só é aceito junto com `password` | Atualização | `400` |
+| `confirmPassword` serve só para validação: nunca é salvo nem aparece nas respostas | Cadastro e atualização | Não se aplica |
+| `favoritePhrase` é opcional, tem até 255 caracteres e pode ser limpa com `null` | Cadastro e atualização | `400` se não for texto ou passar de 255 |
 | Só o dono da conta pode alterá-la ou removê-la | Atualização e remoção | `403` |
 | Uma atualização sem nenhum campo válido é recusada | Atualização | `400` |
 
@@ -185,7 +194,7 @@ Como a unicidade do e-mail é garantida:
 1. Antes de salvar, o service verifica se o e-mail já existe (com `withDeleted: true`, para incluir contas removidas) e lança `EmailAlreadyInUseError` (`409`).
 2. Se duas requisições com o mesmo e-mail chegarem ao mesmo tempo e ambas passarem pela verificação, a constraint `UNIQUE` do banco barra a segunda. O service captura esse erro (código `23505` do PostgreSQL) e o converte no mesmo `409`, então a API nunca responde `500` por e-mail duplicado.
 
-O `PATCH` só repassa ao banco os campos de uma lista explícita (`username`, `email`, `seniority`, `currentPosition` e, quando há troca, `password`). Um campo novo no DTO só chega ao banco se for incluído nessa lista.
+O `PATCH` só repassa ao banco os campos de uma lista explícita (`username`, `email`, `seniority`, `currentPosition`, `favoritePhrase` e, quando há troca, `password`). Um campo novo no DTO só chega ao banco se for incluído nessa lista.
 
 ### Habilidades
 
@@ -246,10 +255,52 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 #### `POST /users`
 
-- Corpo: `username`, `email` e `password` (obrigatórios); `seniority`, `currentPosition` e `birthDate` (opcionais)
-- `201`: criado com sucesso, retorna o usuário sem o campo senha
+- Corpo: `username`, `email`, `password` e `confirmPassword` (obrigatórios); `seniority`, `currentPosition`, `favoritePhrase` e `birthDate` (opcionais)
+- `201`: criado com sucesso, retorna o usuário sem `password` e sem `confirmPassword`
 - `409`: e-mail já existe (inclui e-mails de contas removidas)
-- `400`: corpo inválido (e-mail mal formatado, senha fora de 8 a 72 caracteres, data de nascimento no futuro, campo ausente ou que não existe no DTO)
+- `400`: corpo inválido (e-mail mal formatado, senha fora de 8 a 72 caracteres, `confirmPassword` ausente ou diferente de `password`, `favoritePhrase` com mais de 255 caracteres, data de nascimento no futuro, campo ausente ou que não existe no DTO)
+
+Exemplo:
+
+```http
+POST /users
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "Matheus",
+  "email": "matheus@email.com",
+  "password": "Senha12345",
+  "confirmPassword": "Senha12345",
+  "favoritePhrase": "Carpe diem"
+}
+```
+
+Resposta `201` (sem `favoritePhrase`, o campo volta como `null`):
+
+```json
+{
+  "id": "3f1c0000-0000-4000-8000-000000000000",
+  "username": "Matheus",
+  "email": "matheus@email.com",
+  "seniority": null,
+  "currentPosition": null,
+  "birthDate": null,
+  "favoritePhrase": "Carpe diem",
+  "createdAt": "2026-10-29T17:00:00.000Z"
+}
+```
+
+Resposta `400` quando `confirmPassword` é diferente de `password`:
+
+```json
+{
+  "message": ["confirmPassword must match password"],
+  "error": "Bad Request",
+  "statusCode": 400
+}
+```
 
 #### `GET /users`
 
@@ -266,9 +317,9 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 #### `PATCH /users/:id`
 
-- Corpo (todos opcionais): `username`, `email`, `seniority`, `currentPosition`, `password` e `currentPassword`
+- Corpo (todos opcionais): `username`, `email`, `seniority`, `currentPosition`, `favoritePhrase`, `password`, `confirmPassword` e `currentPassword`
 - `200`: retorna o usuário atualizado sem a senha
-- `400`: campo inválido (e-mail mal formatado, `birthDate`, que não pode ser alterada, senha nova sem `currentPassword`, `currentPassword` incorreta, enum inválido, campo que não existe no DTO e corpo vazio)
+- `400`: campo inválido (e-mail mal formatado, `birthDate`, que não pode ser alterada, senha nova sem `currentPassword`, `currentPassword` incorreta, `password` sem `confirmPassword`, `confirmPassword` diferente de `password` ou enviado sem `password`, `favoritePhrase` que não é texto ou passa de 255 caracteres, enum inválido, campo que não existe no DTO e corpo vazio)
 - `401`: não autorizado
 - `403`: o token é de outro usuário
 - `404`: usuário não encontrado (por exemplo, a conta foi removida e o token ainda é válido)
@@ -290,13 +341,33 @@ Se o e-mail já estiver em uso, a resposta é:
 }
 ```
 
-Para trocar a senha, envie a nova senha junto com a atual:
+Para trocar a senha, envie a nova senha, a confirmação e a senha atual:
 
 ```json
-{ "password": "NovaSenha456", "currentPassword": "Senha12345" }
+{
+  "password": "NovaSenha456",
+  "confirmPassword": "NovaSenha456",
+  "currentPassword": "Senha12345"
+}
 ```
 
-Para limpar um campo opcional, envie `null` (por exemplo, `{ "currentPosition": null }`). Campos ausentes não são alterados.
+Se `confirmPassword` for diferente de `password`, ou for enviado sem `password`, a resposta é:
+
+```json
+{
+  "message": ["confirmPassword must match password"],
+  "error": "Bad Request",
+  "statusCode": 400
+}
+```
+
+Para trocar a frase favorita:
+
+```json
+{ "favoritePhrase": "Carpe diem" }
+```
+
+Para limpar um campo opcional, envie `null` (por exemplo, `{ "currentPosition": null }` ou `{ "favoritePhrase": null }`). Campos ausentes não são alterados.
 
 #### `DELETE /users/:id`
 
@@ -425,14 +496,14 @@ npm run test:e2e -- -t "e-mail"   # só os testes de troca de e-mail
 
 O script usa `vitest run --config ./vitest.config.e2e.ts`. Os arquivos de teste rodam **em sequência** (`fileParallelism: false`), porque compartilham o mesmo banco. Os testes não usam a porta 3000, então podem rodar com a API ligada.
 
-No total são **60 testes**.
+No total são **74 testes**.
 
 ### O que é testado
 
 | Arquivo | Testes | Cobertura |
 |---|---|---|
 | `test/auth.e2e-spec.ts` | 8 | Login (credenciais corretas, senha incorreta, e-mail inexistente e corpo inválido) e proteção das rotas pelo `JwtAuthGuard` (cabeçalho sem `Bearer`, esquema diferente, token assinado com outra chave e token expirado) |
-| `test/users.e2e-spec.ts` | 32 | Cadastro, listagem paginada, busca por id, atualização (perfil, troca de senha e troca de e-mail), exclusão e regras de dono (`401`, `403`, `404`) |
+| `test/users.e2e-spec.ts` | 46 | Cadastro (com `confirmPassword` e `favoritePhrase`), listagem paginada, busca por id, atualização (perfil, troca de senha com confirmação, troca de e-mail e frase favorita), exclusão e regras de dono (`401`, `403`, `404`) |
 | `test/skills.e2e-spec.ts` | 20 | Listagem paginada, busca por id, habilidades de um usuário, criação (inclui duplicatas), exclusão e regra do dono |
 
 Resumo dos cenários principais:
@@ -441,10 +512,10 @@ Resumo dos cenários principais:
 |---|---|
 | `POST /auth/login` | `200` com `accessToken`, `401` senha incorreta, `401` e-mail inexistente, `400` corpo inválido |
 | Rotas protegidas (`JwtAuthGuard`) | `401` para cabeçalho sem `Bearer`, esquema `Basic`, token assinado com outra chave e token expirado |
-| `POST /users` | `201` sem senha na resposta, `409` e-mail duplicado, `400` para e-mail inválido, senha curta, username ausente e campo extra |
+| `POST /users` | `201` sem `password` nem `confirmPassword` na resposta, `201` com e sem `favoritePhrase` (sem ela volta `null`), `409` e-mail duplicado, `400` para e-mail inválido, senha curta, username ausente, campo extra, `confirmPassword` ausente, diferente (inclusive só em maiúsculas/minúsculas) e `favoritePhrase` inválida; o `400` por senhas diferentes não cria o usuário |
 | `GET /users` | `401` sem token e com token inválido, `200` paginado sem senha |
 | `GET /users/:id` | `401`, `200`, `404`, `400` para id que não é UUID |
-| `PATCH /users/:id` | `200` atualiza perfil, `200` troca de senha (login novo funciona, antigo falha), `200` troca de e-mail (login com o e-mail novo funciona, com o antigo falha), `200` enviando o próprio e-mail, `409` e-mail de outra conta (o e-mail original é mantido), `409` e-mail de conta removida, `400` para senha sem `currentPassword`, `currentPassword` errada, e-mail inválido, `birthDate`, enum inválido e campo extra, `401`, `403` conta de outra pessoa, `404` conta removida |
+| `PATCH /users/:id` | `200` atualiza perfil, `200` troca de senha com `confirmPassword` (login novo funciona, antigo falha), `200` atualiza e limpa (`null`) a `favoritePhrase`, `400` para `password` sem `confirmPassword`, `confirmPassword` diferente e `confirmPassword` sem `password`, `200` troca de e-mail (login com o e-mail novo funciona, com o antigo falha), `200` enviando o próprio e-mail, `409` e-mail de outra conta (o e-mail original é mantido), `409` e-mail de conta removida, `400` para senha sem `currentPassword`, `currentPassword` errada, e-mail inválido, `birthDate`, enum inválido e campo extra, `401`, `403` conta de outra pessoa, `404` conta removida |
 | `DELETE /users/:id` | `401`, `403`, `204` (depois o usuário some das consultas e não consegue logar), `404` ao repetir |
 | `GET /skills` | `200` lista vazia e lista paginada |
 | `GET /skills/:id` | `200`, `404`, `400` |
@@ -476,7 +547,7 @@ test/
 | `docker compose ps` | Mostra os containers e as portas |
 | `docker compose logs -f api` | Mostra os logs da API |
 | `docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'` | Abre o `psql` dentro do container |
-| `docker compose stop api` | Para só o container da API (libera a porta 3000) |
+| `docker compose stop api` | Para só o container da API (libera a porta `API_PORT`, 3001 por padrão) |
 | `docker compose down` | Para os containers (os dados são mantidos) |
 | `docker compose down -v` | Para os containers e **apaga os dados do banco** |
 
@@ -515,6 +586,7 @@ erDiagram
     seniority_level seniority
     varchar current_position
     date birth_date
+    varchar favorite_phrase
     timestamp created_at
     timestamp updated_at
     timestamp deleted_at
@@ -530,7 +602,7 @@ erDiagram
   }
 ```
 
-- **users**: `password` guarda o **hash** da senha, nunca a senha. `email` é único (a constraint vale também para contas removidas, porque o soft delete mantém a linha na tabela). `birth_date` é preenchida só no cadastro. `seniority` é um enum (`junior`, `mid`, `senior`, `lead`). `deleted_at` habilita o soft delete.
+- **users**: `password` guarda o **hash** da senha, nunca a senha. `email` é único (a constraint vale também para contas removidas, porque o soft delete mantém a linha na tabela). `birth_date` é preenchida só no cadastro. `favorite_phrase` é opcional (até 255 caracteres). O `confirmPassword` não existe no banco: é só um campo de validação da API. `seniority` é um enum (`junior`, `mid`, `senior`, `lead`). `deleted_at` habilita o soft delete.
 - **skill**: `name` é único (sem diferenciar maiúsculas de minúsculas na API). `created_by` guarda o id do dono.
 - **user_skill**: tabela intermediária da relação muitos-para-muitos entre usuários e habilidades, com chave primária composta `(user_id, skill_id)` e `ON DELETE CASCADE` nas duas chaves estrangeiras.
 
@@ -538,7 +610,7 @@ erDiagram
 
 | Sintoma | Causa provável | Solução |
 |---|---|---|
-| `EADDRINUSE ... :3000` | O container `api` ou outro `start:dev` está usando a porta | `docker compose stop api`, ou encerre o processo antigo |
+| `EADDRINUSE ... :3000` | Outro `start:dev` está usando a porta (ou o `API_PORT` do container foi definido como `3000`) | Encerre o processo antigo (`netstat -ano \| findstr :3000` e `taskkill /PID <pid> /F`) ou mude o `API_PORT` |
 | `Configuration key "JWT_SECRET" does not exist` | Falta `JWT_SECRET` no `.env` | Gere um valor (veja [Configuração](#configuração)) e reinicie a API |
 | Erro de conexão com `localhost` como `DATABASE_URL` | O `DATABASE_URL` precisa ser a URL completa | Use `postgresql://usuario:senha@localhost:5433/banco` |
 | `banco de dados "app_test" não existe` (em português) | A conexão está caindo em um PostgreSQL local, na porta 5432 | Use a porta `5433` no `.env.test` e confirme com `docker compose ps` |
@@ -548,6 +620,8 @@ erDiagram
 | `Nest can't resolve dependencies of the JwtAuthGuard` | O `AuthModule` não está no `AppModule` | Importe o `AuthModule` |
 | `Entity metadata for User#skills was not found` | O `SkillsModule` não está no `AppModule` | Importe o `SkillsModule` |
 | Tabelas não criadas ao rodar pelo Docker | A imagem roda com `NODE_ENV=production` (sem `synchronize`) | Use a opção 2 até existirem migrations |
+| `column "favorite_phrase" does not exist` | O banco de desenvolvimento foi criado antes do campo e a API em produção não usa `synchronize` | `ALTER TABLE users ADD COLUMN favorite_phrase varchar(255);` (ou recrie o banco de desenvolvimento) |
+| `400` com `property confirmPassword should not exist` | DTO sem o campo `confirmPassword` (versão antiga) | Atualize o `create-user.dto.ts` e o `update-user.dto.ts` |
 | `500` com `duplicate key value violates unique constraint` no `PATCH /users/:id` | Versão antiga do service, sem a checagem de e-mail no `update` | Atualize o `users.service.ts`: o `update` deve verificar o e-mail e converter o erro `23505` em `409` |
 
 ## Convenção de commits
@@ -581,9 +655,10 @@ Exemplos: `feat(auth): add login route with JWT`, `feat(users): allow email chan
 - [x] Modelagem dos dados (DER, entities e DTOs)
 - [x] Endpoints de usuários
 - [x] Troca de e-mail com verificação de duplicidade
+- [x] Confirmação de senha (`confirmPassword`) e frase favorita (`favoritePhrase`)
 - [x] Autenticação com JWT
 - [x] Endpoints de habilidades (com regra de dono)
-- [x] Testes e2e (60 testes)
+- [x] Testes e2e (74 testes)
 - [x] Documentação com Swagger
 - [ ] Vínculo de habilidades a usuários (`/users/me/skills`)
 - [ ] Confirmação da troca de e-mail (por senha atual ou link enviado ao e-mail novo)
