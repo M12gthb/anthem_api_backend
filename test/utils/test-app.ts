@@ -32,12 +32,19 @@ export async function resetDatabase(app: INestApplication) {
 // cadastra um usuário, faz login e devolve o token
 export async function registerAndLogin(
   app: INestApplication,
-  overrides: Partial<{ username: string; email: string; password: string }> = {},
+  overrides: Partial<{
+    username: string;
+    email: string;
+    password: string;
+    favoritePhrase: string;
+  }> = {},
 ) {
+  const password = overrides.password ?? 'Senha12345';
   const credentials = {
     username: 'Teste',
     email: `teste-${randomUUID()}@email.com`,
-    password: 'Senha12345',
+    password,
+    confirmPassword: password,
     ...overrides,
   };
 
