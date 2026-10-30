@@ -1,4 +1,3 @@
-// test/auth.e2e-spec.ts
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { createTestApp, registerAndLogin, resetDatabase } from './utils/test-app.js';

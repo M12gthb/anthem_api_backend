@@ -1,4 +1,3 @@
-// src/modules/users/dto/create-user.dto.ts
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
@@ -36,7 +35,7 @@ export class CreateUserDto {
   @ApiProperty({ example: 'Senha12345', minLength: 8, maxLength: 72 })
   @IsString()
   @MinLength(8)
-  @MaxLength(72) // o bcrypt ignora tudo depois de 72 bytes
+  @MaxLength(72) 
   password: string;
 
   @ApiProperty({
@@ -44,7 +43,7 @@ export class CreateUserDto {
     description: 'Deve ser idêntica a password',
   })
   @IsString()
-  @Match('password') // a comparação diferencia maiúsculas de minúsculas
+  @Match('password')
   confirmPassword: string;
 
   @ApiPropertyOptional({ enum: SeniorityLevel, example: SeniorityLevel.JUNIOR })
@@ -72,6 +71,6 @@ export class CreateUserDto {
 
   @ApiPropertyOptional({ example: '1998-05-23', description: 'Formato AAAA-MM-DD' })
   @IsOptional()
-  @IsISO8601({ strict: true }) // aceita "1998-05-23", rejeita "1998-02-31"
+  @IsISO8601({ strict: true }) 
   birthDate?: string;
 }

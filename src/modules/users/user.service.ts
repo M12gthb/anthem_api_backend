@@ -16,8 +16,6 @@ import { UserNotFoundError } from './erros/user-not-found.error.js';
 
 const SALT_ROUNDS = 10;
 
-// campos que o PATCH pode alterar (birthDate é definido só no cadastro)
-// ALTERADO: favoritePhrase entrou na lista
 type UserChanges = Partial<
   Pick<
     User,
@@ -30,9 +28,6 @@ type UserChanges = Partial<
   >
 >;
 
-// lista explícita: um campo novo no DTO só chega ao banco se entrar aqui
-// (confirmPassword e currentPassword ficam de fora de propósito)
-// ALTERADO: favoritePhrase entrou na lista
 const UPDATABLE_FIELDS = [
   'username',
   'email',
@@ -53,13 +48,13 @@ export class UsersService {
 
     if (dto.birthDate) this.assertBirthDateNotInFuture(dto.birthDate);
 
-    // NOVO: confirmPassword serve só para validar, nunca vai para o banco
+    
     const { confirmPassword: _confirmPassword, ...data } = dto;
 
     const password = await bcrypt.hash(dto.password, SALT_ROUNDS);
     const user = this.usersRepository.create({
       ...data,
-      // NOVO: sem frase, grava null (e a resposta devolve null, não omite o campo)
+      
       favoritePhrase: data.favoritePhrase ?? null,
       password,
     });
@@ -68,7 +63,7 @@ export class UsersService {
       const saved = await this.usersRepository.save(user);
       return this.toResponse(saved);
     } catch (error) {
-      // duas requisições iguais ao mesmo tempo: o banco barra a segunda
+      
       if (this.isUniqueViolation(error)) throw new EmailAlreadyInUseError();
       throw error;
     }
@@ -124,8 +119,6 @@ export class UsersService {
       }
     }
 
-    // 4. senha nova exige a senha atual
-    //    (a igualdade password == confirmPassword já foi validada no DTO)
     if (dto.password != null) {
       await this.assertCurrentPassword(id, dto.currentPassword);
       changes.password = await bcrypt.hash(dto.password, SALT_ROUNDS);
@@ -154,7 +147,7 @@ export class UsersService {
     await this.usersRepository.softDelete({ id });
   }
 
-  // usado pelo módulo de autenticação (a coluna password tem select: false)
+ 
   findByEmailWithPassword(email: string) {
     return this.usersRepository.findOne({
       where: { email },
@@ -162,13 +155,11 @@ export class UsersService {
     });
   }
 
-  // ---------- auxiliares ----------
-
   private assertIsOwner(targetId: string, requesterId: string) {
     if (targetId !== requesterId) throw new CannotModifyOtherUserError();
   }
 
-  // withDeleted: o unique do e-mail também vale para contas apagadas (soft delete)
+  
   private async assertEmailAvailable(email: string) {
     const taken = await this.usersRepository.exists({
       where: { email },
@@ -204,7 +195,6 @@ export class UsersService {
     );
   }
 
-  // copia só os campos permitidos; os não enviados (undefined) não contam como alteração
   private pickDefined<T extends object, K extends keyof T>(
     obj: T,
     keys: readonly K[],
@@ -218,7 +208,7 @@ export class UsersService {
 
   private toResponse(user: User): UserResponseDto {
     return plainToInstance(UserResponseDto, user, {
-      excludeExtraneousValues: true, // só sai o que tem @Expose()
+      excludeExtraneousValues: true, 
     });
   }
 }

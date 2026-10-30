@@ -1,7 +1,6 @@
-  // src/modules/auth/dto/login.dto.ts
-  import { ApiProperty } from '@nestjs/swagger';
-  import { Transform } from 'class-transformer';
-  import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
 
   export class LoginDto {
     @ApiProperty({ example: 'matheus@email.com' })

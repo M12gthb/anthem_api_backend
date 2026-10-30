@@ -1,4 +1,3 @@
-// src/modules/skills/skills.controller.ts
 import {
   Body,
   Controller,

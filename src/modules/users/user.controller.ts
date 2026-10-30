@@ -1,4 +1,3 @@
-// src/modules/users/users.controller.ts
 import {
   Body,
   Controller,
@@ -26,7 +25,6 @@ import { UsersService } from './user.service.js';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  // pública: é o cadastro
   @Post()
   create(@Body() dto: CreateUserDto) {
     return this.usersService.create(dto);

@@ -1,4 +1,3 @@
-// src/modules/auth/auth.controller.ts
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import {
   ApiBadRequestResponse,

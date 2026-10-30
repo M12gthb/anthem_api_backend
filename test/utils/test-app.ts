@@ -1,4 +1,3 @@
-// test/utils/test-app.ts
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
@@ -29,7 +28,6 @@ export async function resetDatabase(app: INestApplication) {
   await dataSource.query(`TRUNCATE ${tables} RESTART IDENTITY CASCADE`);
 }
 
-// cadastra um usuário, faz login e devolve o token
 export async function registerAndLogin(
   app: INestApplication,
   overrides: Partial<{

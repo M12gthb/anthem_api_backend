@@ -1,4 +1,3 @@
-// src/app.setup.ts
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 
 export function configureApp(app: INestApplication) {

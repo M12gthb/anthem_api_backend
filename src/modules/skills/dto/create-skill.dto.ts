@@ -1,4 +1,3 @@
-// src/modules/skills/dto/create-skill.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';

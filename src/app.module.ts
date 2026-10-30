@@ -10,10 +10,8 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
 @Module({
   imports: [
-    // 1. Variáveis de ambiente (.env), disponíveis em toda a aplicação
     ConfigModule.forRoot({ isGlobal: true }),
 
-    // 2. Conexão com o Postgres
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -24,17 +22,15 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
       }),
     }),
 
-    // 3. Telemetria (opcional)
     ObserveModule.forRoot({
       appKey: process.env.OBSERVE_APP_KEY ?? 'YOUR_APP_KEY',
       appSecret: process.env.OBSERVE_APP_SECRET ?? 'YOUR_APP_SECRET',
       serviceId: 'anthem_api_backend',
     }),
 
-    // 4. Módulos de funcionalidade
-    UsersModule, // rotas /users
-    AuthModule, // rota /auth/login e registro global do JwtService
-    SkillsModule, // rotas /skills (e registra a entity Skill)
+    UsersModule, 
+    AuthModule, 
+    SkillsModule, 
   ],
   controllers: [],
   providers: [],

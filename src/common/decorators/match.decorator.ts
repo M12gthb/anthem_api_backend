@@ -1,11 +1,10 @@
-// src/common/decorators/match.decorator.ts
 import {
   registerDecorator,
   ValidationArguments,
   ValidationOptions,
 } from 'class-validator';
 
-// Valida que a propriedade decorada é igual a outra propriedade do mesmo objeto
+
 export function Match(property: string, validationOptions?: ValidationOptions) {
   return (object: object, propertyName: string) => {
     registerDecorator({

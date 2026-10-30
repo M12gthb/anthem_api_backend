@@ -1,4 +1,3 @@
-// src/modules/skills/dto/skills-page-response.dto.ts
 import { ApiProperty } from '@nestjs/swagger';
 import { SkillResponseDto } from './skill-response.dto.js';
 
