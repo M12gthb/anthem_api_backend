@@ -305,7 +305,6 @@ describe('Users (e2e)', () => {
           .expect(400);
         expect([res.body.message].flat().join(' ')).toContain('confirmPassword');
 
-        // a senha antiga continua valendo e a nova não funciona
         await http()
           .post('/auth/login')
           .send({ email: credentials.email, password: credentials.password })
@@ -498,7 +497,7 @@ describe('Users (e2e)', () => {
         .expect(403);
     });
 
-    it('404 - conta já deletada, com token ainda válido', async () => {
+    it('401 - conta deletada: o token deixa de valer', async () => {
       const { user, token } = await registerAndLogin(app);
       await http().delete(`/users/${user.id}`).set(auth(token)).expect(204);
 
@@ -506,7 +505,7 @@ describe('Users (e2e)', () => {
         .patch(`/users/${user.id}`)
         .set(auth(token))
         .send({ username: 'fantasma' })
-        .expect(404);
+        .expect(401);
     });
   });
 
@@ -540,11 +539,11 @@ describe('Users (e2e)', () => {
         .expect(401);
     });
 
-    it('404 - deletar uma conta que já foi deletada', async () => {
+    it('401 - repetir o delete: o token da conta deletada deixa de valer', async () => {
       const { user, token } = await registerAndLogin(app);
       await http().delete(`/users/${user.id}`).set(auth(token)).expect(204);
 
-      await http().delete(`/users/${user.id}`).set(auth(token)).expect(404);
+      await http().delete(`/users/${user.id}`).set(auth(token)).expect(401);
     });
   });
 });

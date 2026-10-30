@@ -28,6 +28,7 @@ export async function resetDatabase(app: INestApplication) {
   await dataSource.query(`TRUNCATE ${tables} RESTART IDENTITY CASCADE`);
 }
 
+// cadastra um usuário, faz login e devolve o token e o cookie do refresh token
 export async function registerAndLogin(
   app: INestApplication,
   overrides: Partial<{
@@ -56,9 +57,17 @@ export async function registerAndLogin(
     .send({ email: credentials.email, password: credentials.password })
     .expect(200);
 
+  // "refresh_token=valor": pronto para reenviar no cabeçalho Cookie
+  const setCookies = ([] as string[]).concat(
+    (login.headers['set-cookie'] as string[] | string | undefined) ?? [],
+  );
+  const refreshCookie =
+    setCookies.find((c) => c.startsWith('refresh_token='))?.split(';')[0] ?? '';
+
   return {
     user: created.body as { id: string; email: string },
     token: login.body.accessToken as string,
+    refreshCookie,
     credentials,
   };
 }
