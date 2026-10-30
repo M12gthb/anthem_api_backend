@@ -48,13 +48,11 @@ export class UsersService {
 
     if (dto.birthDate) this.assertBirthDateNotInFuture(dto.birthDate);
 
-    
     const { confirmPassword: _confirmPassword, ...data } = dto;
 
     const password = await bcrypt.hash(dto.password, SALT_ROUNDS);
     const user = this.usersRepository.create({
       ...data,
-      
       favoritePhrase: data.favoritePhrase ?? null,
       password,
     });
@@ -63,7 +61,6 @@ export class UsersService {
       const saved = await this.usersRepository.save(user);
       return this.toResponse(saved);
     } catch (error) {
-      
       if (this.isUniqueViolation(error)) throw new EmailAlreadyInUseError();
       throw error;
     }
@@ -126,8 +123,17 @@ export class UsersService {
 
     if (Object.keys(changes).length === 0) throw new NoFieldsToUpdateError();
 
+    // NOVO: trocar a senha sobe a versão dos tokens, no mesmo UPDATE (atômico).
+    // Todos os tokens de acesso emitidos antes disso deixam de valer.
+    const passwordChanged = changes.password !== undefined;
+
     try {
-      await this.usersRepository.update(id, changes);
+      await this.usersRepository.update(
+        id,
+        passwordChanged
+          ? { ...changes, tokenVersion: () => '"token_version" + 1' }
+          : changes,
+      );
     } catch (error) {
       // duas requisições ao mesmo tempo com o mesmo e-mail: o banco barra a segunda
       if (this.isUniqueViolation(error)) throw new EmailAlreadyInUseError();
@@ -147,11 +153,21 @@ export class UsersService {
     await this.usersRepository.softDelete({ id });
   }
 
- 
+  // usado pelo módulo de autenticação (a coluna password tem select: false)
+  // ALTERADO: também devolve a versão, que vai dentro do token de acesso
   findByEmailWithPassword(email: string) {
     return this.usersRepository.findOne({
       where: { email },
-      select: { id: true, password: true },
+      select: { id: true, password: true, tokenVersion: true },
+    });
+  }
+
+  // NOVO: usado pelo JwtAuthGuard e pelo refresh. Contas removidas (soft delete)
+  // não aparecem, então "conta removida" vira "token inválido".
+  findAuthStateById(id: string) {
+    return this.usersRepository.findOne({
+      where: { id },
+      select: { id: true, tokenVersion: true },
     });
   }
 
@@ -159,7 +175,6 @@ export class UsersService {
     if (targetId !== requesterId) throw new CannotModifyOtherUserError();
   }
 
-  
   private async assertEmailAvailable(email: string) {
     const taken = await this.usersRepository.exists({
       where: { email },
@@ -208,7 +223,7 @@ export class UsersService {
 
   private toResponse(user: User): UserResponseDto {
     return plainToInstance(UserResponseDto, user, {
-      excludeExtraneousValues: true, 
+      excludeExtraneousValues: true,
     });
   }
 }

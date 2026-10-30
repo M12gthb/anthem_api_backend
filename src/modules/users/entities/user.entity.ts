@@ -45,6 +45,10 @@ export class User {
   })
   favoritePhrase: string | null;
 
+  // sobe a cada troca de senha: tokens emitidos com a versão antiga deixam de valer
+  @typeorm.Column({ name: 'token_version', type: 'int', default: 0 })
+  tokenVersion: number;
+
   @typeorm.CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 
