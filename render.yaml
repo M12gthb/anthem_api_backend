@@ -1,0 +1,30 @@
+# Blueprint do Render: cria a API a partir deste arquivo (New > Blueprint)
+services:
+  - type: web
+    name: anthem-api
+    runtime: docker
+    plan: free
+    region: virginia # mesma região do banco no Neon (AWS us-east-1)
+    branch: master
+    dockerfilePath: ./dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass # só faz deploy depois que o CI (testes e2e) passar
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL # connection string *pooled* do Neon, com ?sslmode=require
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true # o Render gera um segredo aleatório de 256 bits
+      - key: FRONTEND_URL # origem do front (ex.: https://anthem.vercel.app); vazio se usar proxy
+        sync: false
+      - key: COOKIE_SAMESITE
+        value: lax
+      - key: REFRESH_COOKIE_PATH # /auth (front chama a API direto) ou /api/auth (proxy)
+        value: /auth
+      - key: TRUST_PROXY # quantos proxies ficam na frente da API (veja o README)
+        value: '1'
+      - key: DB_POOL_MAX
+        value: '5'
+      - key: SWAGGER_ENABLED
+        value: 'false'
