@@ -9,7 +9,10 @@ async function bootstrap() {
   });
   configureApp(app);
 
-  if (process.env.SWAGGER_ENABLED !== 'false') {
+  // documentação: ligada por padrão em dev; em produção só com SWAGGER_ENABLED=true
+  const swaggerDefault =
+    process.env.NODE_ENV === 'production' ? 'false' : 'true';
+  if ((process.env.SWAGGER_ENABLED ?? swaggerDefault) === 'true') {
     setupSwagger(app);
   }
 
